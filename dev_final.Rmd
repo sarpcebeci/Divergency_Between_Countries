@@ -1,0 +1,555 @@
+---
+title: "Graphs for Development Economics Week 3"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+
+```{r}
+library(tidyverse)
+library(reshape)
+library(reshape2)
+library(WDI)
+```
+
+```{r}
+## I get the datas from "https://ourworldindata.org"
+## and saved as "maddison-data-gdp-per-capita-in-2011us.csv" also 
+## you may find at cloud: 
+
+```
+
+
+```{r}
+## Tidying the data
+# I convert to P$250 so basically 1 dollar is equal P$3.50
+
+
+mad <- read_csv("maddison-data-gdp-per-capita-in-2011us.csv")
+mad$GDP = mad$`Real GDP per capita in 2011US$, multiple benchmarks (Maddison Project Database (2018))`
+md <- mad %>%
+  select(c(Entity, Code, Year, GDP)) %>% 
+  mutate(GDP = round(GDP * (250/70), digits = 0))
+
+```
+
+
+```{r}
+## The Dataset consists of GDP observations from 1 to 2017
+## A general look can be FRA and TUR since both have observations from 1 
+md %>%
+  filter(Entity %in% c("United Kingdom", "Turkey", "United States",
+                       "South Korea", "Japan"),
+         Year > 1900) %>% 
+  ggplot(aes(x= Year, y= GDP, color=Code))+
+  geom_point()+
+  geom_line()+
+  ylab("GDP per capita")
+
+```
+
+```{r}
+## Throughout the analysis the most disputable thing was determining which 
+## countries are developed or not. I used three base points: 
+## 1) Wikipedia 2) United Nations catalog 3) getting Q1 and Q4 
+## wiki: https://en.wikipedia.org/wiki/List_of_countries_by_GNI_(nominal)_per_capita
+## UN: https://www.un.org/en/development/desa/policy/wesp/wesp_current/2014wesp_country_classification.pdf
+## I am going to point out the third method till that 
+
+
+high_income <- c("United States", "Sweden", "Netherlands", "Austria",
+                 "Germany", "France", "United Kingdom", "Japan", "Italy",
+                 "Switzerland", "Norway", "Australia","New Zealand", "Belgium", 
+                 "Denmark", "Canada","Finland")
+
+low_income <- c("Yemen", "Mali", "Ethiopia", "Uganda", "Malawi",
+                "Sudan", "Chad", "Gambia", "Madagascar", "Syria",
+                "China", "India", "Nepal", "Ivory Cost", "Angola")
+
+countries <- c(high_income, low_income)
+
+```
+
+
+```{r}
+
+md %>% 
+  filter(Entity %in% countries,
+         Year > 1870,
+         Year < 1985) %>%
+  mutate(Income_Group = case_when(
+    Entity %in% high_income ~ "High",
+    Entity %in% low_income ~ "Low"),
+    GDP = GDP / 1000) %>%
+  ggplot()+
+  geom_point(aes(Year, GDP, color = Income_Group))+
+  geom_abline(slope = 0, intercept = 250/1000, lwd = 2 )+
+  labs(title = "Divergence",
+       caption = "Black line is P$250 lower bound GDP assumption")+
+  ylab("GDP Per Capita (P$1000)")
+
+
+```
+
+
+```{r}
+
+md %>% 
+  filter(Entity %in% countries,
+         Year > 1980) %>%
+  mutate(Income_Group = case_when(
+    Entity %in% high_income ~ "High",
+    Entity %in% low_income ~ "Low"),
+    GDP = GDP / 1000) %>%
+  ggplot()+
+  geom_point(aes(Year, GDP, color = Income_Group))+
+  geom_abline(slope = 0, intercept = 250/1000,  )+
+  labs(title = "Divergence from 1980 to 2017",
+       caption = "Black line is P$250 lower bound GDP assumption")+
+  ylab("GDP Per Capita (P$1000)") 
+
+
+```
+
+
+
+```{r}
+## For the third method I used penn data which is one of other
+## dataset author of the our article used.
+
+penn <- read_csv("penn.csv")
+penn["GDP"] = penn$`Output-side real GDP per capita (gdppc_o) (PWT 9.1 (2019))`
+penn <- penn %>% select(-`Output-side real GDP per capita (gdppc_o) (PWT 9.1 (2019))`)
+
+# I wanted to compare 1970 and 2017
+penn1970 <- penn %>% filter(Year == 1970)
+penn2017 <- penn %>% filter(Year == 2017)
+
+A <- penn %>% mutate(
+  Annual_GDP_Growth = round(((GDP - lag(GDP))/ lag(GDP)) * 100, digits = 2)) %>%
+  filter(Year > 1970) %>%
+  group_by(Entity) %>%
+  summarise(Annual_GDP = mean(Annual_GDP_Growth))
+
+
+# And as a third method:
+# Firstly categorising the countries both in 1970 and 2017 with their quantile 
+# thus, numbers represents quantiles
+
+PennComp <- left_join(penn1970, penn2017, by = "Entity") %>%
+  mutate(
+    Income_group.x = case_when(
+      GDP.x > 8042 ~ "High",
+      GDP.x < 1879 ~ "Low", 
+      GDP.x >= 1879 && GDP.x <= 8042 ~ "Middle"),
+    Income_group.y = case_when(
+      GDP.y > 29372 ~ "High",
+      GDP.y < 4277 ~ "Low", 
+      GDP.y >= 4277 && GDP.x <= 29372 ~ "Middle"))
+
+pennComp <- left_join(PennComp, A, by="Entity")
+
+# Making Income_group a factor:
+
+pennComp$Income_group.x = factor(pennComp$Income_group.x, levels = c( "High", "Middle","Low"), ordered = T)
+pennComp$Income_group.y = factor(pennComp$Income_group.y, levels = c("High", "Middle","Low"), ordered = T)
+
+```
+
+
+```{r}
+## A general look to the countries:
+pennComp
+pennComp %>% 
+  arrange(desc(Annual_GDP)) %>%
+  head(10) %>%
+  ggplot()+
+  geom_bar(aes(x=reorder(Entity,-Annual_GDP), y=Annual_GDP, fill=Entity), stat = "identity")+
+  labs(title = "Countries with top 10 Growth")+
+  xlab("")+
+  ylab("Growth rates between 1970-2017")
+
+```
+
+
+```{r}
+## In the last section of the article Author tells that there are different 
+## countries with poverty trap, countries was rich then became poor etc. 
+## To show this:
+
+# getting the catchers and decadents (unfortunately the losers)
+
+catchers_df <- pennComp %>% 
+  filter(Income_group.x > Income_group.y)
+catchers <- catchers_df$Entity
+
+decadents_df <- pennComp %>% 
+  filter(Income_group.x < Income_group.y,
+         Income_group.y != "Low")
+decadents <- decadents_df$Entity
+
+# creating a data frame with these different type of countries:
+
+md_high <- md %>% filter(Entity %in% high_income) %>%
+  mutate(Income_Group = "High")
+md_low <- md %>% filter(Entity %in% low_income) %>%
+  mutate(Income_Group = "Low")
+md_catchers <- md %>% filter(Entity %in% catchers) %>%
+  mutate(Income_Group = "Catchers")
+md_decadents <- md %>% filter(Entity %in% decadents) %>%
+  mutate(Income_Group = "Decadents")
+md_lowVShighVScatchersVSdecadents <- bind_rows(md_low, md_high, md_catchers,md_decadents)
+
+# the graph:
+
+# I created a two type of of graph 
+# 1) Shows the whole countries
+
+md_lowVShighVScatchersVSdecadents %>% filter(Year > 1970) %>% ggplot()+
+  geom_point(aes(x=Year, y=GDP, color = Income_Group))+
+  geom_smooth(aes(x=Year, y=GDP))
+
+```
+
+
+```{r}
+# 2) Shows only the means of each group
+# which is my favourite graph of this project and probably the graph that 
+# summarizes the discussion.
+
+md_lowVShighVScatchersVSdecadents %>% 
+  group_by(Income_Group, Year) %>%
+  summarise(AVG = mean(GDP)) %>%
+  filter(Year > 1970) %>% 
+  ggplot()+
+  geom_point(aes(x=Year, y=AVG, color=Income_Group))+
+  geom_line(aes(x=Year, y=AVG, color=Income_Group))
+
+```
+
+
+```{r}
+MD <- md %>%
+  filter(Entity %in% high_income) %>%
+  mutate(Growth = ((GDP - lag(GDP))/ lag(GDP) * 100))
+df1 <- MD %>% filter(Year %in% c(1870:1960)) %>%
+  group_by(Entity) %>%
+  summarise(Before60 = round(mean(Growth), digits = 2))
+df2 <- MD %>% filter(Year %in% c(1960:1980)) %>%
+  group_by(Entity) %>%
+  summarise(Between60_80 = round(mean(Growth), digits = 2))
+df3 <- MD %>% filter(Year %in% c(1980:1999)) %>%
+  group_by(Entity) %>%
+  summarise(Between80_99 = round(mean(Growth), digits = 2))
+df4 <- MD %>% filter(Year %in% c(1999:2017)) %>%
+  group_by(Entity) %>%
+  summarise(Between99_17 = round(mean(Growth), digits = 2))
+Country <- df4$Entity 
+MD_ERAS <- cbind(Country,df1, df2,df3,df4) %>% 
+  select(Country, Before60, Between60_80, Between80_99, Between99_17)
+
+Averages <- round(c(mean(MD_ERAS$Before60),
+mean(MD_ERAS$Between60_80),
+mean(MD_ERAS$Between80_99),
+mean(MD_ERAS$Between99_17)), digits = 2)
+Averages <- c("Average", Averages)
+
+SDs <- round(c(sd(MD_ERAS$Before60),
+sd(MD_ERAS$Between60_80),
+sd(MD_ERAS$Between80_99),
+sd(MD_ERAS$Between99_17)), digits = 2)
+SDs <- c("Std. dev. of growth", SDs)
+
+MD_ERA <- rbind(Averages, SDs, MD_ERAS)
+MD_ERAS %>%
+  melt() %>% 
+  ggplot(aes(x=variable, y= value))+
+  geom_boxplot()+
+  ylab("Growth Rate")+
+  xlab("Periods")
+## Countries of interest
+# Norway, Italy, Japan 
+```
+
+
+
+```{r}
+
+botswana <- WDI("BW", indicator = c("SI.POV.LMIC.GP", "SE.SEC.ENRL", 
+                         "SE.SEC.TCAQ.UP.ZS", "SE.XPD.SECO.ZS",
+                         "SN.ITK.SVFI.ZS", "SH.XPD.CHEX.GD.ZS",
+                         "SP.DYN.LE00.IN"))
+```
+
+
+```{r}
+botswana %>% select(year, SI.POV.LMIC.GP) %>% drop_na() %>%
+  ggplot(aes(year, SI.POV.LMIC.GP))+geom_line()+geom_smooth(method = "lm", se=F)+
+  ylab("Poverty")+labs(title = 
+                         "Poverty in Botswana (%)")
+
+```
+
+
+```{r}
+
+botswana %>% select(year, SE.SEC.ENRL) %>% drop_na() %>%
+  ggplot(aes(year, SE.SEC.ENRL))+geom_line()+geom_smooth(method = "lm", se=F)+
+  ylab("Education")+labs(title = 
+                         "Secondary Education Spending in Botswana")
+
+```
+
+
+```{r}
+botswana %>% select(year, SE.XPD.SECO.ZS
+) %>% drop_na() %>%
+  ggplot(aes(year, SE.XPD.SECO.ZS
+))+geom_line()+geom_smooth(method = "lm", se=F)+
+  ylab("")+labs(title = 
+                         "% Gov. Expenditure on Secondary Education")
+
+```
+
+
+```{r}
+botswana %>% select(year, SP.DYN.LE00.IN) %>% drop_na() %>%
+  ggplot(aes(year,SP.DYN.LE00.IN))+geom_line()+geom_smooth(method = "lm", se=F)+
+  ylab("")+labs(title = "Life Expectancy at Birth")
+
+
+
+```
+
+
+```{r}
+botswanaGDP <- WDI("BW", indicator = c("NY.GNS.ICTR.ZS", "NY.GDP.PCAP.CD",
+                        "NV.AGR.TOTL.ZS", "NY.GDP.TOTL.RT.ZS",
+                        "MS.MIL.XPND.GD.ZS", "NE.EXP.GNFS.ZS",
+                        "NE.TRD.GNFS.ZS", "BM.KLT.DINV.WD.GD.ZS"))
+```
+
+
+```{r}
+indicators <- c("NY.GNS.ICTR.ZS", "NY.GDP.PCAP.CD",
+                        "NV.AGR.TOTL.ZS", "NY.GDP.TOTL.RT.ZS",
+                        "MS.MIL.XPND.GD.ZS", "NE.EXP.GNFS.ZS",
+                        "NE.TRD.GNFS.ZS", "BM.KLT.DINV.WD.GD.ZS")
+
+botswanaGDP %>% select(year, NY.GNS.ICTR.ZS) %>%
+  drop_na() %>%
+  ggplot(aes(year, NY.GNS.ICTR.ZS))+
+  geom_line()+
+  geom_smooth(se=F)+
+  ylab("Saving (% of GDP)")
+
+
+```
+
+
+```{r}
+
+botswanaGDP %>% select(year, NE.TRD.GNFS.ZS) %>%
+  drop_na() %>%
+  ggplot(aes(year, NE.TRD.GNFS.ZS))+
+  geom_line()+
+  geom_smooth(se=F)+
+  ylab("Trade (% of GDP)")
+
+
+```
+
+
+```{r}
+
+
+botswanaGDP %>% select(year, BM.KLT.DINV.WD.GD.ZS) %>%
+  drop_na() %>%
+  ggplot(aes(year, BM.KLT.DINV.WD.GD.ZS))+
+  geom_line()+
+  geom_smooth(se=F)+
+  ylab("FDI, net outflows (% of GDP)")
+
+```
+
+
+```{r}
+
+ZamBos <- WDI(country = c("BW", "ZMB"), indicator = c("NY.GDP.PCAP.CD"))
+ZamBos %>% 
+  mutate(NY.GDP.PCAP.CD = NY.GDP.PCAP.CD / 232.19) %>% 
+  ggplot()+
+  geom_area(mapping = aes(x = year, y = NY.GDP.PCAP.CD, fill = country))+ 
+  ylab("GDP per capita")+
+  labs(title = "Botswana vs Zambia",
+       caption = "1 unit is equal to $232.19 which is Zambia's 1960 GDP per Capita ")
+
+
+```
+
+
+
+```{r}
+
+pop <- WDI(country = c("BW", "ZMB"),
+           indicator = c("SP.URB.TOTL", "SP.POP.TOTL"))
+
+pop %>% select(country, year, SP.POP.TOTL) %>%
+  filter(year == 2019) %>%
+  mutate(SP.POP.TOTL = SP.POP.TOTL / 1000000) %>%
+  ggplot()+
+  geom_col(aes(x=country, y=SP.POP.TOTL, fill = c("blue", "red")))+
+  ylab("")+
+  xlab("")+
+  labs(title = "Populations (in Million)")+
+  theme(legend.position = "none")
+
+```
+
+```{r}
+zambiaGDP <- WDI(country = "ZMB", indicator= "NY.GDP.MKTP.CD")
+zambiaGDP %>%
+  mutate(NY.GDP.MKTP.CD=NY.GDP.MKTP.CD/1000000000) %>%
+  ggplot(aes(year, NY.GDP.MKTP.CD))+
+  geom_line()+
+  ylab("GDP in Current $Bil")+
+  geom_hline(yintercept = 28, color= "red", lwd= 2)+
+  geom_vline(xintercept = 2000, color = "green", lwd= 2)+
+  geom_text(label= "Even at heigest Zambia's GDP never passed $28 bil", x = 1985, y= 25, color= "red")
+```
+
+```{r}
+zambiaGDP %>%
+  mutate(NY.GDP.MKTP.CD=NY.GDP.MKTP.CD/1000000000) %>%
+  ggplot(aes(year, NY.GDP.MKTP.CD))+
+  geom_line()+
+  ylab("GDP in Current $Bil")+
+  geom_vline(xintercept = 2000, color = "green", lwd= 2)+
+  labs(title = "Zambia's GDP")
+```
+
+
+```{r}
+## Serdar's part graphics
+serdo_df <- WDI(country = c("NG", "USA"), 
+                indicator = "NY.GDP.PCAP.CD") %>%
+  mutate(NY.GDP.PCAP.CD=round(NY.GDP.PCAP.CD, digits = 2))
+
+
+serdo_df %>% 
+  filter(iso2c == "US") %>% 
+  ggplot(aes(x=year, y=NY.GDP.PCAP.CD))+
+  geom_line()+
+  geom_smooth()+
+  ylab("GDP per capita current $")+
+  labs(title = "USA GDP per Capita between 1960-2019")
+
+
+
+```
+
+```{r}
+serdo_df %>% 
+  filter(iso2c == "NG") %>% 
+  ggplot(aes(x=year, y=NY.GDP.PCAP.CD))+
+  geom_line()+
+  geom_smooth()+
+  ylab("GDP per capita current $")+
+  labs(title = "Nigeria GDP per Capita between 1960-2019")
+```
+
+
+```{r}
+Product_Group <- c("Raw Materials", "Intermediate Goods",
+                   "Consumer Goods", "Capital Goods")
+Share <- c(78.99, 14.91, 4.32, 1.71)
+Country <- c("Botswana","Botswana","Botswana","Botswana") 
+zam_export <- data.frame(Product_Group, Share, Country)
+
+Product_Group <- c("Intermediate Goods","Consumer Goods", 
+                   "Raw Materials","Capital Goods")
+Share <- c(85, 8.77, 4.11, 2.02)
+Country <- c("Zambia","Zambia","Zambia","Zambia")
+bot_export <- data.frame(Product_Group, Share, Country)
+
+exports <- rbind(zam_export, bot_export)
+exports %>%
+  ggplot(aes(Country, Share,fill= Product_Group))+
+  geom_col(position = "stack")+
+  ylab("")+
+  labs(title = "Exports of Botswana and Zambia")
+```
+
+
+
+```{r}
+
+Lowest_GDPs <- c(275, 278, 260, 299)
+Country <- c("Ethiopia-1961:65", "Uganda-1978:82", "Tanzania-1961", 
+             "Burundi-1965")
+data.frame(Country, Lowest_GDPs) %>%
+  ggplot()+
+  geom_col(aes(Country, Lowest_GDPs, fill="red"))+
+  theme(legend.position = "none")+
+  geom_hline(yintercept = 250, color="black", lwd=2)+
+  ylab("P$")+
+  labs(title = "Lowest GDPs")+
+  xlab("Country-Year")
+```
+
+
+
+
+```{r}
+x <- function(GDP){
+  round(((GDP - lag(GDP))/ lag(GDP)) * 100, 
+        digits = 2)}
+Penn_Growths <- penn %>% 
+  select(Entity, Year, GDP) %>% 
+  dcast(Year ~ Entity  , value.var = "GDP") %>% 
+  filter(Year > 1969) %>%
+  mutate_all(x) %>% 
+  select(-Year)
+Penn_Growths
+
+Penn_Casted <- penn %>% 
+  select(Entity, Year, GDP) %>% 
+  dcast(Year ~ Entity  , value.var = "GDP") %>% 
+  filter(Year > 1969)
+
+Penn_G <- penn %>% 
+  select(Entity, Year, GDP) %>% 
+  dcast(Year ~ Entity  , value.var = "GDP") %>% 
+  filter(Year > 1969) %>%
+  mutate_all(x) %>% 
+  select(-Year) 
+
+
+growth_table <- Penn_G%>%
+  mutate(Year = c(1970:2017)) %>%
+  melt(id = c("Year")) %>%
+  group_by(variable) %>%
+  summarise(Avg_GDP_rate =
+            round(mean(value, na.rm = T), digits = 2)) %>%
+  arrange(desc(Avg_GDP_rate))
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
